@@ -194,7 +194,7 @@ mu/sigma
 # Standard error - SE = sd / sqrt(n)
 r <- na.omit(obx$r)
 n <- length(r)
-SE <- sd(r) * sqrt(250)/sqrt(n)
+SE <- sd(r)/sqrt(n) * 250
 SE
 
 
@@ -1326,7 +1326,6 @@ c(mean(X0) - z * SE, mean(X0) + z * SE)
 ##                 5 - Data processing                                        ##
 ##----------------------------------------------------------------------------##
 
-
 rm(list=ls()) # clear environment
 dev.off()     # clear plots
 cat("\014")   # clear console
@@ -1346,9 +1345,18 @@ stocks2 <- read.csv("Stocks-2000-2010.csv", header = FALSE, sep = ";", dec = ","
 stocks3 <- read.csv("Stocks-2010-2014.csv", header = FALSE, sep = ";", dec = ",")
 stocks4 <- read.csv("Stocks-2014-2018.csv", header = FALSE, sep = ";", dec = ",")
 
-stocks <- rbind(stocks1, stocks2, stocks3, stocks4)
-nrow(stocks)
 
+dim(stocks1)
+dim(stocks2)
+dim(stocks3)
+dim(stocks4)
+
+# We want to bind the data frames by rows (have to have the same number of rows)
+stocks <- rbind(stocks1, stocks2, stocks3, stocks4)
+
+dim(stocks)
+
+rm(stocks1, stocks2, stocks3, stocks4)
 
 ## 5.2 Data cleansing ----------------------------------------------------------
 
@@ -1364,9 +1372,18 @@ colnames(stocks) <- c("Date", "SecurityId", "SecurityName", "SecurityType",
 head(stocks)
 
 
+## FACTORS ---------------------------------------------------------------------
 
-## FACTORS ----
-# The column "SecutiryName" is a factor
+stocks$SecurityName[1]
+
+# The column "SecutiryName" is a factor (before, not anymore)
+
+ratings <- c("BBB", "A", "BB", "BB", "BBB", "AAA", "AA", "AA")
+ratings
+
+ratings <- factor(ratings)
+ratings
+
 ratings <- factor(c("BBB", "A", "BB", "BB", "BBB", "AAA", "AA", "AA"))
 ratings
 
@@ -1375,8 +1392,8 @@ ratings <- factor(ratings, levels = c("AAA", "AA", "A", "BBB",
 ratings
 
 
-as.numeric(ratings)
-
+as.numeric(ratings) # a factor can always be converted to a numeric number. 
+# in regressions, factors is interpreted as dummy variable.
 levels(ratings)
 
 
@@ -1384,13 +1401,27 @@ factor(ratings, labels = c("a", "b", "c", "d", "e"))
 
 summary(ratings)
 
-##-------
+##------------------------------------------------------------------------------
 
+# Filterings -------------------------------------------------------------------
+
+# Types of shares:
+summary(stocks$SecurityType)
+stocks$SecurityType <- factor(stocks$SecurityType)
+summary(stocks$SecurityType) # We want the types ordinary shares, easily traded
 
 stocks <- stocks[stocks$SecurityType == "Ordinary Shares", ]
 stocks$SecurityType <- NULL
+
+
+# Remove NA's
+summary(stocks$AdjLast) # We have many NA's
+summary(stocks$Last)
+
 stocks <- stocks[!is.na(stocks$AdjLast), ]
 stocks <- stocks[!is.na(stocks$Last), ]
+
+# Remove pennystocks (higly risky stocks, high transaction costs, osv)
 stocks <- stocks[stocks$Last > 10, ]
 stocks <- stocks[stocks$SharesIssued > 0, ]
 nrow(stocks)
@@ -1399,35 +1430,47 @@ stocks$Date <- as.Date(stocks$Date, format = "%m/%d/%Y")
 
 head(stocks)
 
+# na.omit() checks every row, if a column has one NA, it deletes the entire row.
+# na.omit(stocks)
+
 
 ## 5.3 Rolling observations forward in time ------------------------------------
 
-# We only want prices from late in each month:
-
+# We only want prices from late in each month.
+# Create a vector with only last months:
 months <- seq(as.Date("1980-01-01"), as.Date("2018-02-01"), by = "1 month")
 months <- months - 1
 
-stocks$Date.aux <- cut(stocks$Date, months, right = TRUE)
 
+# dates
+stocks$Date.aux <- cut(stocks$Date, months, right = TRUE)
 head(stocks)
 
 
-## CUT 
+## CUT -----------------------------
 
-b <- c(0, 5, 10, 15)
-v <- c(1, 7, 11, 0, 5, 10, 15)
-c <- cut(v, b, right = TRUE)
+b <- c(0, 5, 10, 15)             # intervals
+v <- c(1, 7, 11, 0, 5, 10, 15)   # values
+c <- cut(v, b, right = TRUE)     # right closed = true
 c
 as.numeric(c)
 
 
-## -------------
+## ---------------------------------
+
+head(stocks$Date)
+head(stocks$Date.aux) # want it to 1980-01-30, not 1979-12-31
 
 stocks$Date[1]
 stocks$Date.aux[1]
 
 i <- as.numeric(stocks$Date.aux)
-stocks$Date.aux <- months[i + 1]
+
+head(i)
+head(months[i+1])
+
+
+stocks$Date.aux <- months[i + 1]   # use this line
 
 stocks$Date[1:5]
 stocks$Date.aux[1:5]
@@ -1436,12 +1479,11 @@ stocks$Date.aux[1:5]
 ## 5.4 One stock price observation per month -----------------------------------
 
 # We want only one observation of each stock price per month
-
 num <- aggregate(stocks$SecurityId, list(stocks$Date.aux, stocks$SecurityId),
                  length)
 
 
-## LIST & AGGREGATE
+## LIST & AGGREGATE ------------------------------------------------------------
 
 list(c(1, 2, 3), c(100, 200), 7)
 
@@ -1455,29 +1497,40 @@ df
 
 aggregate(df$val, list(df$id), sum)
 aggregate(df$val, list(df$id), length)
+aggregate(df$id, list(df$id), length)
 
-## ------------
+## -----------------------------------------------------------------------------
 
 
-
+# We want only one observation of each stock price per month
+num <- aggregate(stocks$SecurityId, list(stocks$Date.aux, stocks$SecurityId), length)
 
 # Is there really just one observation per firm and month?
 head(num[num$x > 1, ])
 
 # We have some cases where observations are more than 1. 
-
 # An example: 
 stocks[stocks$Date.aux == "1992-06-30" & stocks$SecurityId == 6002, ]
-
 
 
 # Solution: we will take the most recent observation in a given month:
 head(stocks)
 
 stocks <- stocks[order(stocks$SecurityId, stocks$Date), ]
+head(stocks)
+
 stocks$row <- 1:nrow(stocks)
+head(stocks)
+
 rows <- aggregate(stocks$row, list(stocks$Date.aux, stocks$SecurityId), max)
+head(rows)
+stocks[stocks$Date.aux == "1992-06-30" & stocks$SecurityId == 6002, ]
+
+
 stocks <- stocks[rows$x, ]
+stocks[stocks$Date.aux == "1992-06-30" & stocks$SecurityId == 6002, ]
+
+
 stocks$row <- NULL
 
 head(stocks)
@@ -1486,18 +1539,31 @@ head(stocks)
 # Only prices that occurs 5 days before end-of-month
 
 stocks$delta.t <- as.numeric(stocks$Date.aux - stocks$Date)
-summary(stocks$delta.t)
+summary(stocks$delta.t) # one row with data as far as 30 days.
 
-stocks <- stocks[stocks$delta.t <= 5, ]
+stocks <- stocks[stocks$delta.t <= 5, ] # 5 days before
 stocks$delta.t <- NULL
 
 # We only need the end-of-month date
-
 stocks$Date <- stocks$Date.aux
 stocks$Date.aux <- NULL
 
 
 ## 5.5 Return computation ------------------------------------------------------
+
+# R = simple return
+# r = log return
+
+# SIMPLE RETURNS ---------------------------------------------------------------
+p <- c(100, 120, 110, 100, 90)
+
+p[-1]
+p[-length(p)]
+
+p[-1] / p[-length(p)] - 1  
+
+## -----------------------------------------------------------------------------
+
 
 # Make sure the data frame is sorted before computing returns
 
@@ -1505,27 +1571,40 @@ stocks <- stocks[order(stocks$SecurityId, stocks$Date), ]
 
 stocks$R <- unlist(tapply(stocks$AdjLast, stocks$SecurityId,
                           function(v) c(v[-1]/v[-length(v)] - 1, NA)))
+#                                Rt+1 = Pt+1 / Pt           - 1
+
+# NA as last argument = forwardlooking return
+# NA as first argument = backwardlooking return
 
 
-
-
-## TAPPLY
+## TAPPLY ----------------------------------------------------------------------
 
 df <- data.frame(id = c("a", "a", "a", "b", "b"), 
                  val = c(100, 200, 120, 140, 160))
 df
 
 fn <- function(v) {
+  c(diff(v), NA)
+}
+
+fn2 <- function(v) {
   c(NA, diff(v))
 }
-tapply(df$val, list(df$id), fn)
 
+fn(c(100, 200, 150))
+fn2(c(100, 200, 150))
+
+
+
+tapply(df$val, list(df$id), fn)
 tapply(df$val, list(df$id), function(v) c(NA, diff(v)))
 
-unlist(tapply(df$val, list(df$id), fn))
+unlist(tapply(df$val, list(df$id), fn))  ## UNLIST the list, make a vector
 
+df$d <- unlist(tapply(df$val, list(df$id), fn))
+df
 
-## ---------------
+## -----------------------------------------------------------------------------
 
 
 # We need to check if there could be cases when a stock stops trading for some 
@@ -1536,7 +1615,10 @@ stocks <- stocks[order(stocks$SecurityId, stocks$Date), ]
 
 stocks$delta.t <- unlist(tapply(stocks$Date, list(stocks$SecurityId),
                                 function(v) c(as.numeric(diff(v)), NA)))
-summary(stocks$delta.t)
+
+head(stocks)
+
+summary(stocks$delta.t) 
 summary(stocks$R)
 
 # Apparently there are cases where stocks trade just once which result in an NA.
@@ -1553,11 +1635,12 @@ nrow(stocks)
 ## 5.6 Market capitalization and weights ---------------------------------------
 
 # We first add a column MarketCap that shows the market capitalization in MNOK:
-stocks$MarketCap <- stocks$Last * stocks$SharesIssued/1e+06
+stocks$MarketCap <- stocks$Last * stocks$SharesIssued / 1e+06
+
+# Why use last, and not adjlast? Because sharesissued is adjusting.
 
 
 # We compute the total market capitalization each month and plot the time series
-
 res <- aggregate(stocks$MarketCap, list(stocks$Date), sum)
 
 names(res) <- c("Date", "TotalMarketCap")
@@ -1565,11 +1648,13 @@ plot(res$Date, res$TotalMarketCap,
      type="l", xlab="", ylab="Total Market Capitalization [mln]")
 
 
-# Merge total market cap with original dataframe:
-
+# Merge total market cap with original dataframe: (add mktcap as column to stocks)
 stocks <- merge(stocks, res, by = "Date")
-nrow(stocks)
 
+# If the date columns have different names: by.x = "Date", by.y = "Dato"
+
+nrow(stocks)
+head(stocks)
 
 stocks$Weight <- stocks$MarketCap/stocks$TotalMarketCap
 summary(stocks$Weight)
@@ -1582,24 +1667,29 @@ summary(stocks$Weight)
 
 market.ew <- aggregate(stocks$R, list(stocks$Date), mean)
 names(market.ew) <- c("Date", "RM.ew")
+head(market.ew)
+
+
 stocks$h <- stocks$R * stocks$Weight
+
 market.vw <- aggregate(stocks$h, list(stocks$Date), sum)
 names(market.vw) <- c("Date", "RM.vw")
+head(market.vw)
 
 
-RM.ew <- cumprod(1 + market.ew$RM.ew)
+RM.ew <- cumprod(1 + market.ew$RM.ew)   # cumprod, because simple return (cumsum if logreturn)
 RM.vw <- cumprod(1 + market.vw$RM.vw)
+
 plot(market.ew$Date, RM.ew, type = "l", xlab = "", ylab = "Market index",
      col = "red")
 lines(market.vw$Date, RM.vw, type = "l", col = "blue")
 legend("topleft", c("Equally-weighed", "Value-weighed"), lwd = 2,
        col = c("red", "blue"))
 
+# The red line outperform the blue line. 
+# Equal weighted 
 
 save(stocks, market.ew, market.vw, file = "Stocks.RData")
-
-
-
 
 
 ## 5.8 From long to wide-format ------------------------------------------------
@@ -1608,10 +1698,10 @@ stocks.wide <- reshape(stocks[, c("Date", "SecurityId", "R")],
                        v.names = "R", idvar = "Date", timevar = "SecurityId", 
                        direction = "wide")
 stocks.wide <- stocks.wide[order(stocks.wide$Date), ]
-stocks.wide[1:4, 1:4]
+stocks.wide[1:10, 1:4]
 
 
-## RESHAPE 
+## RESHAPE ---------------------------------------------------------------------
 
 df <- data.frame(id = c("a", "a", "b"), 
                  t = c(1, 2, 2), 
@@ -1629,8 +1719,7 @@ df2
 
 reshape(df2, direction = "long")
 
-## --------------
-
+## -----------------------------------------------------------------------------
 
 
 market.cap.wide <- 
@@ -1650,12 +1739,17 @@ save(stocks.wide, market.cap.wide, file = "Stocks-Wide.RData")
 
 ## 5.9 Risk-free interest rate -------------------------------------------------
 
+
 # Data from 1980 - 1985
 df1 <- read.csv("MMR-1980-1985.csv", skip = 12)
+head(df1)
+
 df1 <- df1[, c(1, 2)]
 names(df1) <- c("Date", "rf")
+
 months <- seq(as.Date("1959-05-01"), as.Date("1986-12-01"), by = "1 month")
 months <- months - 1
+
 df1$Date <- months
 df1$rf <- df1$rf/100
 df1 <- df1[df1$Date >= "1980-01-01", ]
@@ -1666,8 +1760,11 @@ head(df1)
 df2 <- read.csv("Nibor-1986-2013.csv", skip = 16)
 df2 <- df2[, c(1, 5)]
 names(df2) <- c("Date", "rf")
+head(df2)
+
 months <- seq(as.Date("1986-01-01"), as.Date("2013-12-01"), by = "1 month")
 months <- months - 1
+
 df2$Date <- months
 df2$rf <- df2$rf/100
 
@@ -1677,15 +1774,29 @@ head(df2)
 df3 <- read.csv("Nibor-2014-2018.csv", skip = 0)
 df3 <- df3[, c(1, 2)]
 names(df3) <- c("Date", "rf")
+head(df3)
+
 df3$Date <- as.Date(df3$Date, format = "%d.%m.%y")
+
 df3 <- df3[order(df3$Date), ]
+
 df3 <- df3[df3$Date >= "2013-03-01" & df3$Date <= "2018-01-31", ]
+
 months <- seq(as.Date("2013-03-01"), as.Date("2018-02-01"), by = "1 month")
+
 df3$Date2 <- cut(df3$Date, months)
-df3 <- aggregate(df3$rf, list(df3$Date2), head, n = 1)
+head(df3)
+
+df3 <- aggregate(df3$rf, list(df3$Date2), head, n = 1) # head, n = 1 -> first observation for every month
+
 names(df3) <- c("Date", "rf")
+head(df3)
+
 df3$Date <- as.Date(df3$Date) - 1
+
 df3$rf <- df3$rf/100
+
+head(df3)
 
 
 plot(df1$Date, df1$rf, 
@@ -1708,7 +1819,10 @@ range(df3$Date)
 rf <- rbind(df1[df1$Date < "1985-12-31", ],
             df2, 
             df3[df3$Date > "2013-11-30", ])
-rf$rf <- rf$rf/12
+
+rf$rf <- rf$rf/12                   
+# we scale down to monthly (since we have monthly stock returns)
+# monthly stockreturns -> monthly risk-free (its annual here)
 
 
 save(rf, file = "Riskfree-Rate.RData")
@@ -1779,36 +1893,60 @@ load("Riskfree-Rate.RData") ## Risk-free interest rate
 # Merge stock return, risk-free rate, market return
 df <- merge(rf, stocks.wide, by = "Date")
 df <- merge(market.vw, df, by = "Date")
-df[1:2, 1:4]
+df[1:4, 1:7]
 
 
 # Deduct rf from stock returns to get excess returns: 
 
 rf <- df[, c("Date", "rf")]
 RM <- df[, c("Date", "RM.vw")]
-R <- df[, -c(2, 3)]
+R <- df[, -c(2, 3)]             # df without RM.vw and rf column
+
+
+dim(rf)             
+dim(RM)            
+dim(R)               # all these have 449 rows, IMPORTANT!!
+range(rf$Date)       # and same date range 
+range(RM$Date)
+range(R$Date)
+
+
+# [ , -1] => deselct the first column (Date column), and subtract rf from every other column
+
 R[, -1] <- R[, -1] - rf$rf
 RM[, -1] <- RM[, -1] - rf$rf
 
-save(R, RM, file = "Excess-Returns.RData")
 
 
-## Principle of replication in R: 
+## Principle of replication in R -----------------------------------------------
 m <- matrix(1:4, 2, 2)
 m
-m - c(1, 2)
+m - c(0.1, 0.2)
 
-## ------------------------
+## -----------------------------------------------------------------------------
+
+save(R, RM, file = "Excess-Returns.RData")
+
+R[1:4, 1:5]
+head(RM)
 
 
 # Today is 31.12.2017. 
 # Only stocks traded today and last month. 
 # Only stocks that have been traded at least 75 % of the time during last 60 months.
 
+dim(R)
+
 not.NA <- !is.na(R[R$Date == "2017-11-30", ])
+sum(not.NA)     # 111 not na's
+
 R <- R[, not.NA]
-R <- tail(R, n = 60)
+dim(R)           # only 111 stocks now
+
+
+R <- tail(R, n = 60)    # only 60 last rows (months)
 RM <- tail(RM, n = 60)
+
 
 # With apply we determine the proportion of non-missing observations.
 liq <- apply(R, 2, function(v) sum(!is.na(v))/length(v))
@@ -1816,27 +1954,46 @@ summary(liq)
 R <- R[, liq >= 0.75]
 
 
+# PARAMETERS:  R[ , -1] not select datecolumn. na.rm=T, remove NAs
 mu <- apply(R[, -1], 2, mean, na.rm = TRUE) * 12            # returns
 Rho <- cor(R[, -1], use = "pairwise.complete.obs")          # correlations  
 Sigma <- cov(R[, -1], use = "pairwise.complete.obs") * 12   # covariances
 
 
-summary(mu)
-summary(Rho[lower.tri(Rho)])
+summary(mu) # not want to invest in negative returns. 
 
-mu[mu < 0] <- 0
+# pairwise.complete.obs -> when comparing a pair of two stocks. 
+# If stock 1 has 60 observations, and stock2 has 50, it uses 50 to comoute corr.
+
+summary(Rho[lower.tri(Rho)]) # lower.tri => to get the correct summary (not double count)
+
+
+sum(mu < 0)        # How many stocks have E[r] < 0?
+
+mu[mu < 0] <- 0    # these 6 stocks have an expected return of 0 now
+
+# This is for practical reasons. Solving with negative E[r] fucks up the optimal solution
 
 
 ## 6.3 Solving for the optimal portfolio ---------------------------------------
 
+# the function solve.QP can be found in package "quadprog"
+
 require(quadprog)
 
 A <- t(rbind(1, mu))
+dim(A)
+
 mu.star <- 0.05
-d <- rep(0, length(mu))
+
+d <- rep(0, length(mu))   # we dont have a linear term, so we just set all to 0
+length(d)                 # is 53, great. 
+
 b0 <- c(1, mu.star)
+
 solve.QP(Dmat = Sigma, dvec = d, Amat = A, bvec = b0, meq = 2)
 
+# cannot invert covariance matrix
 
 require(Matrix)
 Sigma2 <- nearPD(Sigma)$mat
@@ -1851,17 +2008,22 @@ hist(omega)
 
 
 # Is the desired return 0.05?
-t(omega) %*% as.matrix(mu)                
+t(omega) %*% as.matrix(mu)        # t omega = transposed omega * mus (eq. 59)        
 
 # The portfolio standard deviation
-sqrt(t(omega) %*% Sigma2 %*% as.matrix(omega))
+sqrt(t(omega) %*% Sigma2 %*% as.matrix(omega))     # eq. 60
 
 # Results: 
-# Return 0.05
-# vol 0.0001 -> basicly risk-free??? Something wrong? page 87
+# ANNUALIZED Return 0.05  (we scaled them earlier)
+# ANNUALIZED Vol 0.0001 -> basicly risk-free??? Something wrong? page 87
+
+# Problem: historical returns does not reflect future returns. 
+# Some estimates here are probably very poorly. 
+# In practice (as here), our inputs into markowitz model sucks, therefore our output sucks.
+# The more constraints you have on markowitz, the more sensible results you get. 
 
 
-# Contraint = all weights must be positive: 
+# Contraint = all weights must be positive: NO SHORTS
 
 A <- t(rbind(1, mu, diag(1, length(mu))))
 mu.star <- 0.05
@@ -1870,12 +2032,18 @@ res <- solve.QP(Dmat = Sigma2, dvec = d, Amat = A, bvec = b0, meq = 2)
 
 omega <- res$solution
 
+sum(omega)   # 100 %
+
 
 t(omega) %*% as.matrix(mu)                        # return = 0.05
 
 sqrt(t(omega) %*% Sigma2 %*% as.matrix(omega))    # sd = 0.09
 
 summary(omega)
+
+# The more constraints you put onto Markowitz, the more sensible results. 
+# But the inputs are shit (the expected returns), so the model sucks. 
+
 
 
 ## 6.4 Single Index Model ------------------------------------------------------
