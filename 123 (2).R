@@ -2050,6 +2050,15 @@ summary(omega)
 
 ## 6.4.1 Estimating the Single Index model -------------------------------------
 
+# Equation 68: 
+
+dim(R)
+R[1:5,1:7] 
+dim(RM)
+RM[1:5,]
+# regress every column (not date column) with market.
+
+
 reg <- apply(R[, -1], 2, function(v) {
   res <- lm(v ~ RM$RM.vw)
   c(coefficients(res), var(residuals(res)))
@@ -2057,8 +2066,14 @@ reg <- apply(R[, -1], 2, function(v) {
 rownames(reg) <- c("alpha", "beta", "var.eps")
 
 
+dim(reg)
+reg[, 1:5]
 
-## REGRESSION
+
+
+
+
+## REGRESSION ------------------------------------------------------------------
 
 x <- c(4, 2, 6, 7, 3, 4)
 y <- c(100, 200, 140, 160, 170, 190)
@@ -2078,19 +2093,22 @@ summary(lmres)$r.squared
 
 summary(lmres)$adj.r.squared
 
-## --------------------------------
+
+## -----------------------------------------------------------------------------
 
 
 # 6.4.2 Expected returns and risk in the single index model --------------------
 
-alpha <- reg[1, ] * 12
+# alpha <- reg[1, ] * 12    # han vil ha aplha = 0 (assuming)
 beta <- reg[2, ]
 var.eps <- reg[3, ] * 12
 mu.index <- mean(RM$RM.vw) * 12
 var.index <- var(RM$RM.vw) * 12
 mu <- beta * mu.index
-Sigma <- var.index * (as.matrix(beta) %*% beta)
-diag(Sigma) <- diag(Sigma) + var.eps
+Sigma <- var.index * (as.matrix(beta) %*% beta)   # eq. 75
+diag(Sigma) <- diag(Sigma) + var.eps              # eq. 75 legger til var feilledd i diagonalen
+
+Sigma[1:4, 1:4]
 
 
 
@@ -2103,15 +2121,15 @@ b0 <- c(1, mu.star)
 res <- solve.QP(Dmat = Sigma, dvec = d, Amat = A, bvec = b0, meq = 2)
 
 omega <- res$solution
-t(omega) %*% as.matrix(mu)
-sqrt(t(omega) %*% Sigma %*% as.matrix(omega))
-summary(omega)
+t(omega) %*% as.matrix(mu)                          # mu_p
+sqrt(t(omega) %*% Sigma %*% as.matrix(omega))       # sigma_p
+summary(omega)                                      # no weight is negative!
 
 
 # Only positive weights: 
-A <- t(rbind(1, mu, diag(1, length(mu))))
+A <- t(rbind(1, mu, diag(1, length(mu))))    # adjusting
 mu.star <- 0.05
-b0 <- c(1, mu.star, rep(0, length(mu)))
+b0 <- c(1, mu.star, rep(0, length(mu)))      # adjusting
 res <- solve.QP(Dmat = Sigma, dvec = d, Amat = A, bvec = b0, meq = 2)
 
 omega <- res$solution
@@ -2120,7 +2138,7 @@ sqrt(t(omega) %*% Sigma %*% as.matrix(omega))
 summary(omega)
 
 
-# FRONTIER: 
+# FRONTIER: --------------------------------------------------------------------
 mu.p.vec <- seq(0, 0.2, length = 100)
 sigma.p.vec <- c()
 for (i in 1:length(mu.p.vec)) {
@@ -2129,8 +2147,7 @@ for (i in 1:length(mu.p.vec)) {
   res <- solve.QP(Dmat = Sigma, dvec = d, Amat = A, bvec = b0,
                   meq = 2)
   omega <- res$solution
-  sigma.p.vec <- c(sigma.p.vec, sqrt(t(omega) %*% Sigma %*%
-                                       as.matrix(omega)))
+  sigma.p.vec <- c(sigma.p.vec, sqrt(t(omega) %*% Sigma %*% as.matrix(omega)))
 }
 
 plot(sigma.p.vec, mu.p.vec, type = "l", xlim = c(0, max(sigma.p.vec)),
@@ -2142,35 +2159,69 @@ plot(sigma.p.vec, mu.p.vec, type = "l", xlim = c(0, max(sigma.p.vec)),
 # and still yields 5%
 
 
+## I TIMEN GJORDE HAN DETTE: --------------------------------------------------
+mu.p.vec <- seq(0, 0.2, length = 100)
+sigma.p.vec <- c()
+for (i in 1:length(mu.p.vec)) {
+  mu.star <- mu.p.vec[i]
+  b0 <- c(1, mu.star, rep(0, length(mu)))
+  A <- t(rbind(1, mu, diag(1, length(mu))))
+  d <- rep(0, length(mu))
+  res <- solve.QP(Dmat = Sigma, dvec = d, Amat = A, bvec = b0, meq = 2)
+  omega <- res$solution
+  sigma.p.vec <- c(sigma.p.vec, sqrt(t(omega) %*% Sigma %*% as.matrix(omega)))
+}
+
+plot(sigma.p.vec, mu.p.vec, type = "l", xlim = c(0, max(sigma.p.vec)),
+     xlab = "Volatility", ylab = "Expected return")
+
+## la til alle variablene på nytt?
+## gir samme resultat som det over. 
+
+
+### Weights and stocks
+R[1:3, 1:4]
+omega[1]     # is the weight for security 6288
 
 
 
 ## 6.5 Capital allocation line -------------------------------------------------
 
 mu.star <- 0.05
+A <- t(rbind(mu, diag(1, length(mu))))   # add this line!!
 b0 <- c(mu.star, rep(0, length(mu)))
 d <- rep(0, length(mu))
 res <- solve.QP(Dmat = Sigma, dvec = d, Amat = A, bvec = b0, meq = 1)
 
-w <- res$solution
-omega <- w/sum(w)
+
+w <- res$solution      # weight, not omega 
+omega <- w/sum(w)      # weights of the tangecy portoflioo
 omega
 
-y <- t(omega) %*% as.matrix(mu)
-x <- sqrt(t(omega) %*% Sigma %*% as.matrix(omega))
+y <- t(omega) %*% as.matrix(mu)     # E[r] of tangency portoflio
+x <- sqrt(t(omega) %*% Sigma %*% as.matrix(omega)) # sd/vol of tangency portfolio
 
-points(x, y, pch = 4, lwd = 4, col = "darkred")
-abline(0, y/x, lwd = 2, col = "darkred", lty = 2)
+points(x, y, pch = 4, lwd = 4, col = "red")
+abline(0, y/x, lwd = 2, col = "red", lty = 2)  # CAL line
+# since we have excess returns we start at 0 (first argument)
 
-0.05/y
-0.05/y * x
+points(0, 0, pch = 4, lwd = 4, col = "blue") # risk free
+abline(h = 0.05, lty = 2) # the client 5 % return
+
+
+0.05/y             # how much to invest in risky tangency portoflio
+x2 <- 0.05/y * x   # then we get an vol p.a. 
+
+points(x2, 0.05, col = "darkgreen", lwd = 4)  # this is where the investors invest.
+
 
 round(omega, 2)
-omega * 0.05/c(y) * 5e+07
+omega * 0.05/c(y) * 5e+07   # how much to invest in tancency potfolio (50 mill)
+# in norske kroner terms
 
+y/x     # sharpe ratio (ex-ante) (for ex-post, need to do a backtesting)
 
-y/x
-
+# ex-ante or ex-post sharpe ratio
 
 
 
